@@ -59,7 +59,6 @@ public class RadarGuiScreen extends GuiScreen {
         guiLeft = (width - W) / 2;
         guiTop = (height - H) / 2;
 
-        // scope area — between title separator (y=19) and bottom separator (y=H-34)
         int top = guiTop + 21;
         int bot = guiTop + H - 36;
         int areaH = bot - top;
@@ -67,14 +66,12 @@ public class RadarGuiScreen extends GuiScreen {
         scopeCX = guiLeft + W / 2;
         scopeCY = top + areaH / 2;
 
-        // range buttons — 14x14, 2px margin from container edge
         prevBtn = new GuiButton(BTN_PREV, guiLeft + W - 34, guiTop + 4, 14, 14, "◀");
         nextBtn = new GuiButton(BTN_NEXT, guiLeft + W - 19, guiTop + 4, 14, 14, "▶");
         addButton(prevBtn);
         addButton(nextBtn);
 
-        // bottom bar: 29px tall, even 6px padding top and bottom
-        int barY = guiTop + H - 34 + 6; // 6px below bottom separator
+        int barY = guiTop + H - 34 + 6;
         scanBtn = new GuiButton(BTN_SCAN, guiLeft + W / 2 - 32, barY, 64, 18, "Scan");
         addButton(scanBtn);
 
@@ -115,21 +112,16 @@ public class RadarGuiScreen extends GuiScreen {
 
         ScanRange range = RadarNetworkHandler.getRange(selectedRange);
 
-        // title bar
         drawString(fontRenderer, TextFormatting.GOLD + "☍ Lumiscope",
                 guiLeft + 6, guiTop + 6, 0xFFFFFF);
 
-        // range name — centered between title and the ◀▶ buttons
         drawCenteredString(fontRenderer, TextFormatting.GOLD + range.label,
                 guiLeft + W - 66, guiTop + 6, 0xFFFFFF);
 
-        // scope
         drawScope();
 
-        // fuel slot
         drawFuel(range);
 
-        // messages BELOW the container
         drawMessage(range);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
@@ -194,8 +186,6 @@ public class RadarGuiScreen extends GuiScreen {
         int my = guiTop + H + 8;
         int cx = guiLeft + W / 2;
 
-        long now = System.currentTimeMillis();
-        long cd = cooldownEndMs - now;
         boolean hasRes = scanBlips != null && !scanBlips.isEmpty()
                 && scanStatus == RadarScanResultPacket.STATUS_SUCCESS;
 
@@ -209,18 +199,11 @@ public class RadarGuiScreen extends GuiScreen {
             String name = range.fuelItem.getItemStackDisplayName(new ItemStack(range.fuelItem));
             msg = TextFormatting.RED + "◆ Need " + range.fuelCount + "× " + name;
             color = 0xFF4444;
-        } else if (hasRes && cd > 0) {
-            msg = TextFormatting.GREEN + "" + scanBlips.size() + " signal(s) detected  |  "
-                    + TextFormatting.GRAY + "Next: " + fmtCooldown(cooldownEndMs);
-            color = 0x00FF00;
         } else if (hasRes) {
             msg = TextFormatting.GREEN + "" + scanBlips.size() + " signal(s) detected";
             color = 0x00FF00;
-        } else if (cd > 0) {
-            msg = TextFormatting.GRAY + "Cooldown: " + fmtCooldown(cooldownEndMs);
-            color = 0x888888;
         } else {
-            return; // nothing to show — no "Ready" message
+            return;
         }
 
         drawCenteredString(fontRenderer, msg, cx, my, color);
