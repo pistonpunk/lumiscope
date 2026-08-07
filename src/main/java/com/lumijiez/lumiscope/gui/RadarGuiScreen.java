@@ -59,22 +59,23 @@ public class RadarGuiScreen extends GuiScreen {
         guiLeft = (width - W) / 2;
         guiTop = (height - H) / 2;
 
-        // scope area
-        int top = guiTop + 20;
-        int bot = guiTop + H - 34;
+        // scope area — between title separator (y=19) and bottom separator (y=H-34)
+        int top = guiTop + 21;
+        int bot = guiTop + H - 36;
         int areaH = bot - top;
         scopeR = Math.min(areaH / 2, (W - 24) / 2) - 4;
         scopeCX = guiLeft + W / 2;
         scopeCY = top + areaH / 2;
 
-        // tiny range buttons — inside right margin
-        prevBtn = new GuiButton(BTN_PREV, guiLeft + W - 30, guiTop + 5, 12, 12, "◀");
-        nextBtn = new GuiButton(BTN_NEXT, guiLeft + W - 16, guiTop + 5, 12, 12, "▶");
+        // range buttons — 14x14, 2px margin from container edge
+        prevBtn = new GuiButton(BTN_PREV, guiLeft + W - 34, guiTop + 4, 14, 14, "◀");
+        nextBtn = new GuiButton(BTN_NEXT, guiLeft + W - 19, guiTop + 4, 14, 14, "▶");
         addButton(prevBtn);
         addButton(nextBtn);
 
-        // scan — bottom center
-        scanBtn = new GuiButton(BTN_SCAN, guiLeft + W / 2 - 32, guiTop + H - 28, 64, 17, "Scan");
+        // bottom bar: 29px tall, even 6px padding top and bottom
+        int barY = guiTop + H - 34 + 6; // 6px below bottom separator
+        scanBtn = new GuiButton(BTN_SCAN, guiLeft + W / 2 - 32, barY, 64, 18, "Scan");
         addButton(scanBtn);
 
         updateButtonStates();
@@ -172,8 +173,9 @@ public class RadarGuiScreen extends GuiScreen {
     // ---- fuel ----
 
     private void drawFuel(ScanRange range) {
-        int x = guiLeft + 6;
-        int y = guiTop + H - 30;
+        int barY = guiTop + H - 34 + 6;
+        int x = guiLeft + 8;
+        int y = barY;
 
         drawRect(x, y, x + 18, y + 18, 0xFF8B8B8B);
         drawRect(x + 1, y + 1, x + 17, y + 17, 0xFF373737);
