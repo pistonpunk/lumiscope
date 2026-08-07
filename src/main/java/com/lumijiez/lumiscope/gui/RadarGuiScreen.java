@@ -7,9 +7,9 @@ import com.lumijiez.lumiscope.network.packets.RadarScanResultPacket;
 import com.lumijiez.lumiscope.network.records.RadarBlip;
 import com.lumijiez.lumiscope.potions.PotionManager;
 import com.lumijiez.lumiscope.util.ScopeRenderer;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.text.TextFormatting;
@@ -19,21 +19,28 @@ import java.util.List;
 
 public class RadarGuiScreen extends GuiScreen {
 
-    private static final int BTN_SCAN = 0, BTN_PREV = 1, BTN_NEXT = 2;
+    // container — same width as standard MC chest, slightly taller
+    private static final int W = 176;
+    private static final int H = 186;
 
-    private static List<RadarBlip> scanBlips = null;
+    private static final int BTN_SCAN = 0, BTN_RANGE_PREV = 1, BTN_RANGE_NEXT = 2;
+
+    private static List<RadarBlip> scanBlips;
     private static byte scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
-    private static long cooldownEndMs = 0;
-    private static byte selectedRange = 0;
+    private static long cooldownEndMs;
+    private static byte selectedRange;
 
+    private int guiLeft, guiTop;
+    private GuiButton scanBtn, rangePrevBtn, rangeNextBtn;
+    private long animFrame;
+
+    // scope — centered in the container's upper area
+    // guiTop+20 title bar /  guiTop+H-32 bottom bar  /  scope fills the middle
     private int scopeCX, scopeCY, scopeR;
-    private GuiButton scanBtn, prevBtn, nextBtn;
-    private long animFrame = 0;
-    private int errorTicks = 0;
-    private String statusMsg = "";
-    private int statusColor = 0xFFFFFF;
 
-    // ---- static ----
+    // ================================================================
+    //  STATIC
+    // ================================================================
 
     public static void onScanResult(List<RadarBlip> blips, byte status,
                                      long serverTimestamp, byte rangeOrdinal) {
@@ -46,147 +53,216 @@ public class RadarGuiScreen extends GuiScreen {
         }
     }
 
-    // ---- init ----
+    // ================================================================
+    //  INIT
+    // ================================================================
 
     @Override
     public void initGui() {
-        // Responsive scope — scales with screen, generous max
-        int headerH = 15;
-        int footerH = 28;
-        int availH = height - headerH - footerH;
-        int availW = width - 24;
-        // Add 8px padding so scope never touches header/footer/edges
-        scopeR = Math.min(availH / 2, availW / 2) - 12;
-        if (scopeR > 140) scopeR = 140;
-        if (scopeR < 44) scopeR = 44;
+        guiLeft = (width - W) / 2;
+        guiTop = (height - H) / 2;
 
-        scopeCX = width / 2;
-        scopeCY = headerH + availH / 2;
+        // scope fills the middle of the container
+        int scopeAreaTop = guiTop + 20;
+        int scopeAreaBot = guiTop + H - 36;
+        int scopeAreaH = scopeAreaBot - scopeAreaTop;
+        int scopeAreaW = W - 16;
+        scopeR = Math.min(scopeAreaH / 2, scopeAreaW / 2) - 4;
+        scopeCX = guiLeft + W / 2;
+        scopeCY = scopeAreaTop + scopeAreaH / 2;
 
-        // Range buttons — left side under the range text
-        int rangeX = 8;
-        int rangeY = 42;
-        prevBtn = new GuiButton(BTN_PREV, rangeX, rangeY, 16, 16, "<");
-        nextBtn = new GuiButton(BTN_NEXT, rangeX + 20, rangeY, 16, 16, ">");
-        addButton(prevBtn);
-        addButton(nextBtn);
+        // range buttons in title bar
+        rangePrevBtn = new GuiButton(BTN_RANGE_PREV, guiLeft + W - 42, guiTop + 4, 14, 14, "◀");
+        rangeNextBtn = new GuiButton(BTN_RANGE_NEXT, guiLeft + W - 14, guiTop + 4, 14, 14, "▶");
+        addButton(rangePrevBtn);
+        addButton(rangeNextBtn);
 
-        // Scan button — centered at bottom
-        scanBtn = new GuiButton(BTN_SCAN, width / 2 - 40, height - 24, 80, 20, "Scan");
+        // scan button — bottom right
+        scanBtn = new GuiButton(BTN_SCAN, guiLeft + W - 66, guiTop + H - 28, 58, 18, "Scan");
         addButton(scanBtn);
+
+        updateButtonStates();
     }
 
-    // ---- tick ----
+    private void updateButtonStates() {
+        long now = System.currentTimeMillis();
+        boolean onCd = now < cooldownEndMs;
+        boolean jammed = mc.player != null
+                && mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT);
+
+        scanBtn.enabled = !onCd && !jammed;
+        scanBtn.displayString = onCd ? fmtCooldown(cooldownEndMs)
+                              : jammed ? "Jammed!"
+                              : "Scan";
+    }
+
+    // ================================================================
+    //  TICK
+    // ================================================================
 
     @Override
     public void updateScreen() {
         super.updateScreen();
         animFrame++;
-
-        boolean onCd = System.currentTimeMillis() < cooldownEndMs;
-        boolean jammed = mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT);
-        boolean hasRes = scanBlips != null && !scanBlips.isEmpty()
-                && scanStatus == RadarScanResultPacket.STATUS_SUCCESS;
-
-        ScanRange range = RadarNetworkHandler.getRange(selectedRange);
-
-        if (jammed) {
-            scanBtn.displayString = "Jammed!";
-            scanBtn.enabled = false;
-            statusMsg = TextFormatting.DARK_RED + "JAMMED — cannot scan";
-            statusColor = 0xFF0000;
-        } else if (scanStatus == RadarScanResultPacket.STATUS_NO_FUEL) {
-            scanBtn.displayString = "No Fuel!";
-            scanBtn.enabled = false;
-            statusMsg = TextFormatting.RED + "Need " + range.fuelCount + "x fuel";
-            statusColor = 0xFF4444;
-            errorTicks++;
-            if (errorTicks > 100) {
-                scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
-                errorTicks = 0;
-            }
-        } else if (hasRes) {
-            scanBtn.displayString = onCd ? "Cooldown " + fmtBtn(cooldownEndMs) : "Scan Again";
-            scanBtn.enabled = !onCd;
-            statusMsg = TextFormatting.GREEN + "" + scanBlips.size()
-                    + " signal(s)  |  " + range.label;
-            statusColor = 0x00FF00;
-        } else if (onCd) {
-            scanBtn.displayString = "Cooldown " + fmtBtn(cooldownEndMs);
-            scanBtn.enabled = false;
-            statusMsg = TextFormatting.GRAY + "Recharging...";
-            statusColor = 0x888888;
-        } else {
-            scanBtn.displayString = "Scan";
-            scanBtn.enabled = true;
-            statusMsg = TextFormatting.YELLOW + "Ready";
-            statusColor = 0xFFFF00;
-        }
+        updateButtonStates();
     }
 
-    // ---- draw ----
+    // ================================================================
+    //  DRAW
+    // ================================================================
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
+        drawContainer();
+
         ScanRange range = RadarNetworkHandler.getRange(selectedRange);
 
-        // Title
-        drawCenteredString(fontRenderer,
-                TextFormatting.GOLD + "Lumiscope Radar",
-                width / 2, 6, 0xFFFFFF);
+        // title
+        drawString(fontRenderer, TextFormatting.GOLD + "☍ Lumiscope",
+                guiLeft + 6, guiTop + 6, 0xFFFFFF);
 
-        // Scope border
-        drawRect(scopeCX - scopeR - 2, scopeCY - scopeR - 2,
-                scopeCX + scopeR + 2, scopeCY + scopeR + 2, 0xFF333333);
+        // range name between buttons
+        String rng = TextFormatting.GOLD + range.label;
+        drawCenteredString(fontRenderer, rng,
+                guiLeft + W - 74, guiTop + 6, 0xFFFFFF);
 
-        ScopeRenderer.renderScope(scopeCX, scopeCY, scopeR, scanBlips, animFrame);
+        // scope
+        drawScope();
 
-        // Compass
-        label(scopeCX, scopeCY - scopeR - 6, "N", 0x00DD00);
-        label(scopeCX + scopeR + 7, scopeCY, "E", 0x00DD00);
-        label(scopeCX, scopeCY + scopeR + 6, "S", 0x00DD00);
-        label(scopeCX - scopeR - 16, scopeCY, "W", 0x00DD00);
+        // fuel
+        drawFuel(range);
 
-        // Range label + buttons on the left
-        drawString(fontRenderer,
-                TextFormatting.GOLD + range.label,
-                8, 30, 0xFFFFFF);
-
-        // Fuel icon + count (left side, below range buttons)
-        int fuelX = 8;
-        int fuelY = 64;
-        RenderHelper.enableGUIStandardItemLighting();
-        itemRender.renderItemAndEffectIntoGUI(
-                new ItemStack(range.fuelItem), fuelX, fuelY);
-        RenderHelper.disableStandardItemLighting();
-        drawString(fontRenderer,
-                TextFormatting.WHITE + "x" + range.fuelCount,
-                fuelX + 20, fuelY + 4, 0xFFFFFF);
-
-        // Cooldown duration (left side, below fuel)
-        drawString(fontRenderer,
-                TextFormatting.DARK_GRAY + "Cooldown: " + fmtDur(range.cooldownMs),
-                fuelX, fuelY + 20, 0x666666);
-
-        // Legend (top-right, compact)
-        int lx = width - 100;
-        int ly = 14;
-        String[] names = {"V.Close","Close","Mod.","Far","V.Far","Faint"};
-        int[] lc = {0xFFFFB000,0xFFFFD700,0xFFADFF2F,0xFF00CED1,0xFF4169E1,0xFF8888CC};
-        for (int i = 0; i < names.length; i++) {
-            int y = ly + i * 9;
-            drawRect(lx, y, lx + 6, y + 5, lc[i]);
-            drawString(fontRenderer, names[i], lx + 9, y - 1, lc[i]);
-        }
-
-        // Status (bottom-left)
-        drawString(fontRenderer, statusMsg, 6, height - 13, statusColor);
+        // status
+        drawStatus(range);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
-    // ---- actions ----
+    // ---- scope ----
+
+    private void drawScope() {
+        // border ring
+        drawCircle(scopeCX, scopeCY, scopeR, 0xFF444444);
+
+        ScopeRenderer.renderScope(scopeCX, scopeCY, scopeR, scanBlips, animFrame);
+
+        // compass letters — red, small, tight inside scope edge
+        int c = 0xFF4444;
+        float s = 0.55f;
+        int inset = 3;
+
+        // N
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(scopeCX, scopeCY - scopeR + inset, 0);
+        GlStateManager.scale(s, s, 1f);
+        drawCenteredString(fontRenderer, "N", 0, 0, c);
+        GlStateManager.popMatrix();
+
+        // S
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(scopeCX, scopeCY + scopeR - inset - 6, 0);
+        GlStateManager.scale(s, s, 1f);
+        drawCenteredString(fontRenderer, "S", 0, 0, c);
+        GlStateManager.popMatrix();
+
+        // W
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(scopeCX - scopeR + inset, scopeCY - 3, 0);
+        GlStateManager.scale(s, s, 1f);
+        drawString(fontRenderer, "W", 0, 0, c);
+        GlStateManager.popMatrix();
+
+        // E
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(scopeCX + scopeR - inset, scopeCY - 3, 0);
+        GlStateManager.scale(s, s, 1f);
+        drawString(fontRenderer, "E", -fontRenderer.getStringWidth("E"), 0, c);
+        GlStateManager.popMatrix();
+    }
+
+    // ---- fuel ----
+
+    private void drawFuel(ScanRange range) {
+        int x = guiLeft + 6;
+        int y = guiTop + H - 28;
+
+        // slot
+        drawRect(x, y, x + 18, y + 18, 0xFF8B8B8B);
+        drawRect(x + 1, y + 1, x + 17, y + 17, 0xFF373737);
+
+        RenderHelper.enableGUIStandardItemLighting();
+        itemRender.renderItemAndEffectIntoGUI(
+                new ItemStack(range.fuelItem, range.fuelCount), x + 1, y + 1);
+        RenderHelper.disableStandardItemLighting();
+
+        drawString(fontRenderer, "×" + range.fuelCount, x + 22, y + 5, 0xFFFFFF);
+    }
+
+    // ---- status ----
+
+    private void drawStatus(ScanRange range) {
+        long now = System.currentTimeMillis();
+        long cd = cooldownEndMs - now;
+        boolean hasRes = scanBlips != null && !scanBlips.isEmpty()
+                && scanStatus == RadarScanResultPacket.STATUS_SUCCESS;
+
+        String msg;
+        int color;
+
+        if (scanStatus == RadarScanResultPacket.STATUS_JAMMED) {
+            msg = TextFormatting.DARK_RED + "Jammed";
+            color = 0xFF0000;
+        } else if (scanStatus == RadarScanResultPacket.STATUS_NO_FUEL) {
+            msg = TextFormatting.RED + "Need " + range.fuelCount + "x " +
+                    range.fuelItem.getItemStackDisplayName(new ItemStack(range.fuelItem));
+            color = 0xFF4444;
+        } else if (hasRes && cd > 0) {
+            msg = TextFormatting.GREEN + "" + scanBlips.size() + " signal(s)  |  " +
+                    TextFormatting.GRAY + fmtCooldown(cooldownEndMs);
+            color = 0x00FF00;
+        } else if (hasRes) {
+            msg = TextFormatting.GREEN + "" + scanBlips.size() + " signal(s)";
+            color = 0x00FF00;
+        } else if (cd > 0) {
+            msg = TextFormatting.GRAY + "Cooldown: " + fmtCooldown(cooldownEndMs);
+            color = 0x888888;
+        } else {
+            msg = TextFormatting.YELLOW + "Ready";
+            color = 0xFFFF00;
+        }
+
+        drawString(fontRenderer, msg, guiLeft + 32, guiTop + H - 19, color);
+    }
+
+    // ---- container ----
+
+    private void drawContainer() {
+        // main background (chest-gui grey)
+        drawRect(guiLeft, guiTop, guiLeft + W, guiTop + H, 0xFFC6C6C6);
+        // inner dark fill
+        drawRect(guiLeft + 3, guiTop + 3, guiLeft + W - 3, guiTop + H - 3, 0xFF000000);
+        // border inset
+        drawRect(guiLeft + 4, guiTop + 4, guiLeft + W - 4, guiTop + H - 4, 0xFF2B2B2B);
+        // title separator
+        drawRect(guiLeft + 4, guiTop + 18, guiLeft + W - 4, guiTop + 19, 0xFF444444);
+        // bottom separator
+        drawRect(guiLeft + 4, guiTop + H - 32, guiLeft + W - 4, guiTop + H - 31, 0xFF444444);
+    }
+
+    // manual circle since GuiScreen has no drawCircle
+    private static void drawCircle(int cx, int cy, int r, int color) {
+        for (int i = 0; i < 360; i++) {
+            double rad = Math.toRadians(i);
+            int x = (int)(cx + Math.cos(rad) * r);
+            int y = (int)(cy + Math.sin(rad) * r);
+            drawRect(x, y, x + 1, y + 1, color);
+        }
+    }
+
+    // ================================================================
+    //  ACTIONS
+    // ================================================================
 
     @Override
     protected void actionPerformed(GuiButton btn) throws IOException {
@@ -194,50 +270,26 @@ public class RadarGuiScreen extends GuiScreen {
             case BTN_SCAN:
                 if (System.currentTimeMillis() < cooldownEndMs) return;
                 if (mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) return;
-                if (!btn.enabled) return;
                 scanBlips = null;
                 scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
                 RadarNetworkHandler.getNetworkChannel()
                         .sendToServer(new RadarScanRequestPacket(selectedRange));
                 break;
-            case BTN_PREV:
+            case BTN_RANGE_PREV:
                 selectedRange = (byte)((selectedRange - 1
                         + RadarNetworkHandler.getRangeCount())
                         % RadarNetworkHandler.getRangeCount());
                 break;
-            case BTN_NEXT:
+            case BTN_RANGE_NEXT:
                 selectedRange = (byte)((selectedRange + 1)
                         % RadarNetworkHandler.getRangeCount());
                 break;
         }
     }
 
-    // ---- helpers ----
-
-    private void label(int x, int y, String s, int c) {
-        drawString(fontRenderer, s, x - fontRenderer.getStringWidth(s) / 2, y - 4, c);
-    }
-
-    private static String fmtFull(long endMs) {
-        long r = Math.max(0, (endMs - System.currentTimeMillis()) / 1000);
-        if (r >= 3600) return (r/3600) + "h " + ((r%3600)/60) + "m remaining";
-        if (r >= 60) return (r/60) + "m " + (r%60) + "s remaining";
-        return r + "s remaining";
-    }
-
-    private static String fmtBtn(long endMs) {
-        long r = Math.max(0, (endMs - System.currentTimeMillis()) / 1000);
-        if (r >= 3600) return (r/3600) + "h" + ((r%3600)/60) + "m";
-        if (r >= 60) return (r/60) + "m";
-        return r + "s";
-    }
-
-    private static String fmtDur(long ms) {
-        long s = ms / 1000;
-        if (s >= 3600) return (s/3600) + "h";
-        if (s >= 60) return (s/60) + "m";
-        return s + "s";
-    }
+    // ================================================================
+    //  KEYBOARD
+    // ================================================================
 
     @Override
     protected void keyTyped(char c, int code) throws IOException {
@@ -249,4 +301,15 @@ public class RadarGuiScreen extends GuiScreen {
 
     @Override
     public boolean doesGuiPauseGame() { return false; }
+
+    // ================================================================
+    //  HELPERS
+    // ================================================================
+
+    private static String fmtCooldown(long endMs) {
+        long r = Math.max(0, (endMs - System.currentTimeMillis()) / 1000);
+        if (r >= 3600) return (r / 3600) + "h" + ((r % 3600) / 60) + "m";
+        if (r >= 60) return (r / 60) + "m" + (r % 60) + "s";
+        return r + "s";
+    }
 }
