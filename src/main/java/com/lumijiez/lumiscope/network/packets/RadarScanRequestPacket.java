@@ -8,24 +8,33 @@ import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
 
 public class RadarScanRequestPacket implements IMessage {
 
+    public byte rangeOrdinal;
+
     public RadarScanRequestPacket() {}
 
-    @Override
-    public void toBytes(ByteBuf buf) {}
+    public RadarScanRequestPacket(byte rangeOrdinal) {
+        this.rangeOrdinal = rangeOrdinal;
+    }
 
     @Override
-    public void fromBytes(ByteBuf buf) {}
+    public void toBytes(ByteBuf buf) {
+        buf.writeByte(rangeOrdinal);
+    }
+
+    @Override
+    public void fromBytes(ByteBuf buf) {
+        rangeOrdinal = buf.readByte();
+    }
 
     public static class Handler implements IMessageHandler<RadarScanRequestPacket, IMessage> {
         @Override
         public IMessage onMessage(RadarScanRequestPacket message, MessageContext ctx) {
-            // MUST schedule on the main server thread — network thread cannot
-            // safely access world state (player list, dimensions, inventories).
             ctx.getServerHandler().player.getServerWorld().addScheduledTask(() -> {
-                IMessage reply = RadarNetworkHandler.handleScanRequest(ctx.getServerHandler().player);
+                IMessage reply = RadarNetworkHandler.handleScanRequest(
+                        ctx.getServerHandler().player, message.rangeOrdinal);
                 RadarNetworkHandler.getNetworkChannel().sendTo(reply, ctx.getServerHandler().player);
             });
-            return null; // reply is sent manually from the scheduled task
+            return null;
         }
     }
 }

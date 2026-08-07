@@ -13,11 +13,11 @@ import java.util.List;
 
 public class RadarScanResultPacket implements IMessage {
 
-    private List<RadarBlip> blips;
-    private byte status;
-    private long scanTimestamp;
+    List<RadarBlip> blips;
+    byte status;
+    long scanTimestamp;
+    byte rangeOrdinal;
 
-    // Status codes
     public static final byte STATUS_SUCCESS = 0;
     public static final byte STATUS_NO_FUEL = 1;
     public static final byte STATUS_JAMMED = 2;
@@ -27,17 +27,20 @@ public class RadarScanResultPacket implements IMessage {
         this.blips = new ArrayList<>();
         this.status = STATUS_SUCCESS;
         this.scanTimestamp = 0;
+        this.rangeOrdinal = 0;
     }
 
-    public RadarScanResultPacket(List<RadarBlip> blips, byte status, long scanTimestamp) {
+    public RadarScanResultPacket(List<RadarBlip> blips, byte status, long scanTimestamp, byte rangeOrdinal) {
         this.blips = blips;
         this.status = status;
         this.scanTimestamp = scanTimestamp;
+        this.rangeOrdinal = rangeOrdinal;
     }
 
     @Override
     public void toBytes(ByteBuf buf) {
         buf.writeByte(status);
+        buf.writeByte(rangeOrdinal);
         buf.writeLong(scanTimestamp);
         buf.writeInt(blips.size());
         for (RadarBlip blip : blips) {
@@ -50,6 +53,7 @@ public class RadarScanResultPacket implements IMessage {
     @Override
     public void fromBytes(ByteBuf buf) {
         status = buf.readByte();
+        rangeOrdinal = buf.readByte();
         scanTimestamp = buf.readLong();
         int size = buf.readInt();
         blips = new ArrayList<>(size);
@@ -65,8 +69,8 @@ public class RadarScanResultPacket implements IMessage {
         @Override
         public IMessage onMessage(RadarScanResultPacket message, MessageContext ctx) {
             Minecraft.getMinecraft().addScheduledTask(() -> {
-                // Store results where the GUI can read them
-                RadarGuiScreen.onScanResult(message.blips, message.status, message.scanTimestamp);
+                RadarGuiScreen.onScanResult(message.blips, message.status,
+                        message.scanTimestamp, message.rangeOrdinal);
             });
             return null;
         }

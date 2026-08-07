@@ -1,6 +1,5 @@
 package com.lumijiez.lumiscope.util;
 
-import com.lumijiez.lumiscope.network.handlers.RadarNetworkHandler;
 import com.lumijiez.lumiscope.network.records.RadarBlip;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
@@ -9,257 +8,192 @@ import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import org.lwjgl.opengl.GL11;
 
 import java.util.List;
-import java.util.Random;
 
 public class ScopeRenderer {
 
-    private static final Random RANDOM = new Random();
-
-    // Distance tier colors (ARGB)
-    private static final int[] TIER_COLORS = {
-            0xFFFFB000, // VERY_CLOSE - amber
-            0xFFFFD700, // CLOSE - gold
-            0xFFADFF2F, // MODERATE - yellow-green
-            0xFF00CED1, // FAR - teal
-            0xFF4169E1, // VERY_FAR - royal blue
-            0xFF191970, // EXTREMELY_FAR - midnight blue
+    private static final int[] TIER_COLOR = {
+        0xFFFFB000, 0xFFFFD700, 0xFFADFF2F, 0xFF00CED1, 0xFF4169E1, 0xFF191970,
     };
 
-    private static final int SCOPE_BG = 0xFF0A1A0A;
-    private static final int RING_COLOR = 0x5500FF00;
-    private static final int OUTER_RING = 0x8800FF00;
-
-    private static long frameCounter = 0;
-
-    public static void renderScope(int cx, int cy, int radius, List<RadarBlip> blips, float partialTicks) {
-        frameCounter++;
-
+    public static void renderScope(int cx, int cy, int radius,
+                                    List<RadarBlip> blips, long frame) {
         GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
         GlStateManager.disableTexture2D();
+        GlStateManager.enableBlend();
         GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        // Reset color to full white+opaque so vertex colors are used as-is
-        GlStateManager.color(1f, 1f, 1f, 1f);
+        GlStateManager.color(1, 1, 1, 1);
 
-        // 1. Dark scope background
-        drawFilledCircle(cx, cy, radius, SCOPE_BG);
+        // background
+        fillCircle(cx, cy, radius, 10, 26, 10, 220);
 
-        // 2. Concentric rings
-        int[] ringRadii = {radius / 5, radius * 2 / 5, radius * 3 / 5, radius * 4 / 5};
-        for (int r : ringRadii) {
-            drawCircleOutline(cx, cy, r, RING_COLOR, 1.5f);
+        // concentric rings
+        for (int i = 1; i <= 5; i++) {
+            int r = radius * i / 6;
+            ring(cx, cy, r, 0, 180, 0, i == 5 ? 60 : 30);
         }
 
-        // 3. Crosshair
-        drawLine(cx - radius, cy, cx + radius, cy, 0x2200AA00);
-        drawLine(cx, cy - radius, cx, cy + radius, 0x2200AA00);
+        // crosshair
+        line(cx - radius, cy, cx + radius, cy, 0, 100, 0, 25);
+        line(cx, cy - radius, cx, cy + radius, 0, 100, 0, 25);
 
-        // 4. Cardinal tick marks
-        float tickLen = radius * 0.08f;
+        // cardinal ticks
         for (int i = 0; i < 8; i++) {
-            double angle = Math.toRadians(i * 45);
-            float ix = cx + (float) Math.cos(angle) * radius;
-            float iy = cy + (float) Math.sin(angle) * radius;
-            float ox = cx + (float) Math.cos(angle) * (radius - tickLen);
-            float oy = cy + (float) Math.sin(angle) * (radius - tickLen);
-            drawLine(ox, oy, ix, iy, 0x5500AA00);
+            double a = Math.toRadians(i * 45);
+            float ix = cx + (float) Math.cos(a) * radius;
+            float iy = cy + (float) Math.sin(a) * radius;
+            float ox = cx + (float) Math.cos(a) * (radius - radius * 0.07f);
+            float oy = cy + (float) Math.sin(a) * (radius - radius * 0.07f);
+            line(ox, oy, ix, iy, 0, 140, 0, 55);
         }
 
-        // 5. Rotating sweep line (Tessellator-based, not raw GL)
-        float sweepAngle = (float) ((frameCounter * 0.5 + partialTicks * 0.5) % 360);
-        double sweepRad = Math.toRadians(sweepAngle);
-        float sweepX = cx + (float) Math.cos(sweepRad) * radius;
-        float sweepY = cy + (float) Math.sin(sweepRad) * radius;
-        double sweepRad2 = Math.toRadians(sweepAngle - 8);
-        float sweepX2 = cx + (float) Math.cos(sweepRad2) * radius;
-        float sweepY2 = cy + (float) Math.sin(sweepRad2) * radius;
+        // sweep wedge
+        float sweepDeg = (frame * 0.6f) % 360f;
+        double sr = Math.toRadians(sweepDeg);
+        double sr2 = Math.toRadians(sweepDeg - 5);
+        float sx = cx + (float) Math.cos(sr) * radius;
+        float sy = cy + (float) Math.sin(sr) * radius;
+        float sx2 = cx + (float) Math.cos(sr2) * radius;
+        float sy2 = cy + (float) Math.sin(sr2) * radius;
 
         Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.getBuffer();
-        buf.begin(GL11.GL_TRIANGLES, DefaultVertexFormats.POSITION_COLOR);
-        // Sweep wedge: bright at leading edge, fading behind
-        buf.pos(cx, cy, 0).color(0, 255, 0, 40).endVertex();
-        buf.pos(sweepX, sweepY, 0).color(0, 255, 0, 40).endVertex();
-        buf.pos(sweepX2, sweepY2, 0).color(0, 255, 0, 5).endVertex();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_TRIANGLES, DefaultVertexFormats.POSITION_COLOR);
+        b.pos(cx, cy, 0).color(0, 255, 0, 30).endVertex();
+        b.pos(sx, sy, 0).color(0, 255, 0, 30).endVertex();
+        b.pos(sx2, sy2, 0).color(0, 255, 0, 4).endVertex();
         tess.draw();
 
-        // 6. Player blips — drawn bright and bold
-        if (blips != null && !blips.isEmpty() && !RadarNetworkHandler.areResultsStale()) {
+        // blips
+        if (blips != null) {
             for (RadarBlip blip : blips) {
-                renderBlip(cx, cy, radius, blip);
+                renderBlip(cx, cy, radius, blip, frame);
             }
         }
 
-        // 7. Static noise
-        renderStatic(cx, cy, radius);
+        // static noise
+        long seed = frame / 4;
+        for (int i = 0; i < 35; i++) {
+            seed = seed * 6364136223846793005L + 1442695040888963407L;
+            double a = ((double) (seed >>> 16) / (double) (1L << 48)) * Math.PI * 2;
+            seed = seed * 6364136223846793005L + 1442695040888963407L;
+            double d = ((double) (seed >>> 16) / (double) (1L << 48)) * radius * 0.88;
+            float dx = cx + (float)(Math.cos(a) * d);
+            float dy = cy + (float)(Math.sin(a) * d);
+            int alpha = (int)(seed & 63) + 8;
+            fillRect(dx - 0.5f, dy - 0.5f, 1, 1, 0, 170, 0, alpha);
+        }
 
-        // 8. Outer ring (prominent)
-        drawCircleOutline(cx, cy, radius, OUTER_RING, 2.5f);
+        // outer ring
+        ring(cx, cy, radius, 0, 220, 0, 100);
 
-        GlStateManager.color(1f, 1f, 1f, 1f);
+        GlStateManager.color(1, 1, 1, 1);
         GlStateManager.enableTexture2D();
         GlStateManager.disableBlend();
         GlStateManager.popMatrix();
     }
 
-    private static void renderBlip(int cx, int cy, int radius, RadarBlip blip) {
-        // Per-blip jitter
-        long blipSeed = Double.doubleToLongBits(blip.direction) + frameCounter;
-        RANDOM.setSeed(blipSeed);
-        double jitter = (RANDOM.nextDouble() - 0.5) * Math.toRadians(5.0);
-        double displayAngle = blip.direction + jitter;
+    private static void renderBlip(int cx, int cy, int radius, RadarBlip blip, long frame) {
+        long seed = Double.doubleToRawLongBits(blip.direction) ^ (blip.distanceTier * 7919L);
+        double phase = (seed & 0xFFFF) / 65535.0 * Math.PI * 2;
 
-        // Distance tier → radial position (closer = further from center)
+        double wobSpeed = 0.04 + blip.distanceTier * 0.008;
+        double wobAmp = 4.0 + blip.distanceTier * 2.5;
+        double wobX = Math.cos(frame * wobSpeed + phase) * wobAmp * 0.6;
+        double wobY = Math.sin(frame * wobSpeed * 1.3 + phase) * wobAmp * 0.8;
+
+        double jitter = Math.sin(frame * 0.07 + phase) * Math.toRadians(3.0);
+        double angle = blip.direction + jitter;
+
         float distRatio;
         switch (blip.distanceTier) {
-            case 0: distRatio = 0.92f; break;
-            case 1: distRatio = 0.75f; break;
-            case 2: distRatio = 0.55f; break;
-            case 3: distRatio = 0.35f; break;
-            case 4: distRatio = 0.22f; break;
-            default: distRatio = 0.10f; break;
+            case 0: distRatio = 0.90f; break;
+            case 1: distRatio = 0.72f; break;
+            case 2: distRatio = 0.52f; break;
+            case 3: distRatio = 0.34f; break;
+            case 4: distRatio = 0.20f; break;
+            default:distRatio = 0.10f; break;
         }
 
-        float bx = cx + (float) Math.cos(displayAngle) * radius * distRatio;
-        float by = cy + (float) Math.sin(displayAngle) * radius * distRatio;
+        // Convert from math angle (0=East) to compass angle (0=North, top of screen)
+        float bx = cx + (float)Math.sin(angle) * radius * distRatio + (float)wobX;
+        float by = cy - (float)Math.cos(angle) * radius * distRatio + (float)wobY;
 
-        int tierColor = TIER_COLORS[blip.distanceTier];
-        int r = (tierColor >> 16) & 0xFF;
-        int g = (tierColor >> 8) & 0xFF;
-        int b = tierColor & 0xFF;
+        int color = TIER_COLOR[blip.distanceTier];
+        int cr = (color >> 16) & 0xFF;
+        int cg = (color >> 8) & 0xFF;
+        int cb = color & 0xFF;
 
-        // Pulse
-        double pulse = 0.7 + 0.3 * Math.sin((frameCounter + blipSeed % 100) * 0.1);
-        float baseSize = (1.0f - distRatio) * 10f + 4f;
-        float size = baseSize * (float) pulse * (1.0f + blip.playerCount * 0.3f);
-        if (size < 3f) size = 3f;
-        if (size > 20f) size = 20f;
+        double pulse = 0.7 + 0.3 * Math.sin((frame + seed % 97) * 0.15);
+        float size = (1f - distRatio) * 10f + 6f;
+        size = size * (float)pulse * (1f + blip.playerCount * 0.3f);
+        if (size < 5f) size = 5f;
 
-        // Draw a bright glow: outer halo → mid glow → bright core
-        // All using the Tessellator with proper per-vertex alpha
+        fillCircle(bx, by, size, cr, cg, cb, 220);
+        ring(bx, by, size + 1.5f, 255, 255, 255, 180);
+
+        if (blip.playerCount > 1) {
+            for (int i = 0; i < blip.playerCount && i < 4; i++) {
+                double da = (i / (double)blip.playerCount) * Math.PI * 2 + frame * 0.03;
+                float dx = bx + (float)Math.cos(da) * (size + 3f);
+                float dy = by + (float)Math.sin(da) * (size + 3f);
+                fillCircle(dx, dy, 2f, 255, 255, 255, 230);
+            }
+        }
+    }
+
+    // ---- primitives ----
+
+    private static void fillCircle(float cx, float cy, float r,
+                                    int cr, int cg, int cb, int ca) {
         Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf;
-
-        // Outer glow (large, very transparent)
-        buf = tess.getBuffer();
-        buf.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
-        buf.pos(bx, by, 0).color(r, g, b, 30).endVertex();
-        for (int i = 0; i <= 32; i++) {
-            double a = (i / 32.0) * Math.PI * 2;
-            float px = bx + (float) Math.cos(a) * size * 3.0f;
-            float py = by + (float) Math.sin(a) * size * 3.0f;
-            buf.pos(px, py, 0).color(r, g, b, 30).endVertex();
-        }
-        tess.draw();
-
-        // Mid glow
-        buf = tess.getBuffer();
-        buf.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
-        buf.pos(bx, by, 0).color(r, g, b, 100).endVertex();
-        for (int i = 0; i <= 32; i++) {
-            double a = (i / 32.0) * Math.PI * 2;
-            float px = bx + (float) Math.cos(a) * size * 1.8f;
-            float py = by + (float) Math.sin(a) * size * 1.8f;
-            buf.pos(px, py, 0).color(r, g, b, 100).endVertex();
-        }
-        tess.draw();
-
-        // Bright core
-        buf = tess.getBuffer();
-        buf.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
-        buf.pos(bx, by, 0).color(255, 255, 255, 220).endVertex();
-        for (int i = 0; i <= 32; i++) {
-            double a = (i / 32.0) * Math.PI * 2;
-            float px = bx + (float) Math.cos(a) * size * 0.6f;
-            float py = by + (float) Math.sin(a) * size * 0.6f;
-            buf.pos(px, py, 0).color(255, 255, 255, 220).endVertex();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
+        b.pos(cx, cy, 0).color(cr, cg, cb, ca).endVertex();
+        int segs = (int)(r * 0.5 + 12);
+        if (segs < 8) segs = 8;
+        for (int i = 0; i <= segs; i++) {
+            double a = (i / (double)segs) * Math.PI * 2;
+            b.pos(cx + (float)Math.cos(a) * r,
+                  cy + (float)Math.sin(a) * r, 0)
+             .color(cr, cg, cb, ca).endVertex();
         }
         tess.draw();
     }
 
-    private static void renderStatic(int cx, int cy, int radius) {
-        int numDots = 50;
-        long staticSeed = frameCounter / 3;
-        RANDOM.setSeed(staticSeed);
-        GL11.glPointSize(1.5f);
-
+    private static void ring(float cx, float cy, float r,
+                              int cr, int cg, int cb, int ca) {
         Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.getBuffer();
-        buf.begin(GL11.GL_POINTS, DefaultVertexFormats.POSITION_COLOR);
-
-        for (int i = 0; i < numDots; i++) {
-            double angle = RANDOM.nextDouble() * Math.PI * 2;
-            double dist = RANDOM.nextDouble() * radius * 0.92;
-            float sx = cx + (float) (Math.cos(angle) * dist);
-            float sy = cy + (float) (Math.sin(angle) * dist);
-            int alpha = RANDOM.nextInt(80) + 15;
-            buf.pos(sx, sy, 0).color(0, 200, 0, alpha).endVertex();
-        }
-        tess.draw();
-        GL11.glPointSize(1.0f);
-    }
-
-    // ---------- GL Primitives (all Tessellator-based) ----------
-
-    private static void drawFilledCircle(float cx, float cy, float radius, int color) {
-        int r = (color >> 16) & 0xFF;
-        int g = (color >> 8) & 0xFF;
-        int b = color & 0xFF;
-        int a = (color >> 24) & 0xFF;
-
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.getBuffer();
-        buf.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
-        buf.pos(cx, cy, 0).color(r, g, b, a).endVertex();
-        int segments = 64;
-        for (int i = 0; i <= segments; i++) {
-            double angle = (i / (double) segments) * Math.PI * 2;
-            float x = cx + (float) Math.cos(angle) * radius;
-            float y = cy + (float) Math.sin(angle) * radius;
-            buf.pos(x, y, 0).color(r, g, b, a).endVertex();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_LINE_LOOP, DefaultVertexFormats.POSITION_COLOR);
+        int segs = 72;
+        for (int i = 0; i < segs; i++) {
+            double a = (i / (double)segs) * Math.PI * 2;
+            b.pos(cx + (float)Math.cos(a) * r,
+                  cy + (float)Math.sin(a) * r, 0)
+             .color(cr, cg, cb, ca).endVertex();
         }
         tess.draw();
     }
 
-    private static void drawCircleOutline(float cx, float cy, float radius, int color, float lineWidth) {
-        int r = (color >> 16) & 0xFF;
-        int g = (color >> 8) & 0xFF;
-        int b = color & 0xFF;
-        int a = (color >> 24) & 0xFF;
-
-        GlStateManager.glLineWidth(lineWidth);
+    private static void line(float x1, float y1, float x2, float y2,
+                              int cr, int cg, int cb, int ca) {
         Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.getBuffer();
-        buf.begin(GL11.GL_LINE_LOOP, DefaultVertexFormats.POSITION_COLOR);
-        int segments = 72;
-        for (int i = 0; i < segments; i++) {
-            double angle = (i / (double) segments) * Math.PI * 2;
-            float x = cx + (float) Math.cos(angle) * radius;
-            float y = cy + (float) Math.sin(angle) * radius;
-            buf.pos(x, y, 0).color(r, g, b, a).endVertex();
-        }
-        tess.draw();
-        GlStateManager.glLineWidth(1.0f);
-    }
-
-    private static void drawLine(float x1, float y1, float x2, float y2, int color) {
-        int r = (color >> 16) & 0xFF;
-        int g = (color >> 8) & 0xFF;
-        int b = color & 0xFF;
-        int a = (color >> 24) & 0xFF;
-
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.getBuffer();
-        buf.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);
-        buf.pos(x1, y1, 0).color(r, g, b, a).endVertex();
-        buf.pos(x2, y2, 0).color(r, g, b, a).endVertex();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);
+        b.pos(x1, y1, 0).color(cr, cg, cb, ca).endVertex();
+        b.pos(x2, y2, 0).color(cr, cg, cb, ca).endVertex();
         tess.draw();
     }
 
-    public static int getTierColor(byte tier) {
-        if (tier >= 0 && tier < TIER_COLORS.length) {
-            return TIER_COLORS[tier];
-        }
-        return 0xFFFFFFFF;
+    private static void fillRect(float x, float y, float w, float h,
+                                  int cr, int cg, int cb, int ca) {
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR);
+        b.pos(x,     y,     0).color(cr, cg, cb, ca).endVertex();
+        b.pos(x,     y + h, 0).color(cr, cg, cb, ca).endVertex();
+        b.pos(x + w, y + h, 0).color(cr, cg, cb, ca).endVertex();
+        b.pos(x + w, y,     0).color(cr, cg, cb, ca).endVertex();
+        tess.draw();
     }
 }

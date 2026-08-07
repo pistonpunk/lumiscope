@@ -1,6 +1,7 @@
 package com.lumijiez.lumiscope.gui;
 
 import com.lumijiez.lumiscope.network.handlers.RadarNetworkHandler;
+import com.lumijiez.lumiscope.network.handlers.RadarNetworkHandler.ScanRange;
 import com.lumijiez.lumiscope.network.packets.RadarScanRequestPacket;
 import com.lumijiez.lumiscope.network.packets.RadarScanResultPacket;
 import com.lumijiez.lumiscope.network.records.RadarBlip;
@@ -10,8 +11,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.renderer.RenderHelper;
-import net.minecraft.client.renderer.RenderItem;
-import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.text.TextFormatting;
 
@@ -20,275 +19,234 @@ import java.util.List;
 
 public class RadarGuiScreen extends GuiScreen {
 
-    private static final int SCOPE_RADIUS = 64;
-    private static final int BUTTON_SCAN = 0;
+    private static final int BTN_SCAN = 0, BTN_PREV = 1, BTN_NEXT = 2;
 
-    // Static result storage (written by packet handler, read by GUI)
     private static List<RadarBlip> scanBlips = null;
     private static byte scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
-    private static long scanTimestamp = 0;
-    private static long cooldownEndMs = 0; // static — survives GUI close/reopen
+    private static long cooldownEndMs = 0;
+    private static byte selectedRange = 0;
 
-    private int scopeCenterX;
-    private int scopeCenterY;
-    private GuiButton scanButton;
-    private String statusMessage = "";
+    private int scopeCX, scopeCY, scopeR;
+    private GuiButton scanBtn, prevBtn, nextBtn;
+    private long animFrame = 0;
+    private int errorTicks = 0;
+    private String statusMsg = "";
     private int statusColor = 0xFFFFFF;
-    private int animationTick = 0;
-    private int errorDisplayTick = 0;
 
-    public RadarGuiScreen() {
-        if (Minecraft.getMinecraft().player != null) {
-            // Proactively check if player is jammed — disable scanning immediately
-            if (Minecraft.getMinecraft().player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) {
-                scanStatus = RadarScanResultPacket.STATUS_JAMMED;
-            }
-        }
-    }
+    // ---- static ----
 
-    // Called from packet handler on client thread
-    public static void onScanResult(List<RadarBlip> blips, byte status, long timestamp) {
+    public static void onScanResult(List<RadarBlip> blips, byte status,
+                                     long serverTimestamp, byte rangeOrdinal) {
         scanBlips = blips;
         scanStatus = status;
-        scanTimestamp = timestamp;
-        // Persist cooldown from server's timestamp so it survives GUI close/reopen
         if (status == RadarScanResultPacket.STATUS_SUCCESS) {
-            cooldownEndMs = timestamp + RadarNetworkHandler.COOLDOWN_TICKS * 50L;
+            ScanRange r = RadarNetworkHandler.getRange(rangeOrdinal);
+            cooldownEndMs = serverTimestamp + r.cooldownMs;
+            selectedRange = rangeOrdinal;
         }
-        RadarNetworkHandler.cacheResults(blips, status, timestamp);
     }
+
+    // ---- init ----
 
     @Override
     public void initGui() {
-        super.initGui();
-        scopeCenterX = width / 2;
-        scopeCenterY = height / 2 - 30;
+        // Responsive scope — scales with screen, generous max
+        int headerH = 15;
+        int footerH = 28;
+        int availH = height - headerH - footerH;
+        int availW = width - 24;
+        // Add 8px padding so scope never touches header/footer/edges
+        scopeR = Math.min(availH / 2, availW / 2) - 12;
+        if (scopeR > 140) scopeR = 140;
+        if (scopeR < 44) scopeR = 44;
 
-        int buttonW = 80;
-        int buttonH = 20;
-        scanButton = new GuiButton(BUTTON_SCAN,
-                width / 2 - buttonW / 2,
-                height - 40,
-                buttonW, buttonH,
-                "Scan");
-        addButton(scanButton);
+        scopeCX = width / 2;
+        scopeCY = headerH + availH / 2;
+
+        // Range buttons — left side under the range text
+        int rangeX = 8;
+        int rangeY = 42;
+        prevBtn = new GuiButton(BTN_PREV, rangeX, rangeY, 16, 16, "<");
+        nextBtn = new GuiButton(BTN_NEXT, rangeX + 20, rangeY, 16, 16, ">");
+        addButton(prevBtn);
+        addButton(nextBtn);
+
+        // Scan button — centered at bottom
+        scanBtn = new GuiButton(BTN_SCAN, width / 2 - 40, height - 24, 80, 20, "Scan");
+        addButton(scanBtn);
     }
+
+    // ---- tick ----
 
     @Override
     public void updateScreen() {
         super.updateScreen();
-        animationTick++;
+        animFrame++;
 
-        boolean onCooldown = System.currentTimeMillis() < cooldownEndMs;
-        boolean hasResults = scanBlips != null && !scanBlips.isEmpty()
-                && scanStatus == RadarScanResultPacket.STATUS_SUCCESS
-                && !RadarNetworkHandler.areResultsStale();
+        boolean onCd = System.currentTimeMillis() < cooldownEndMs;
+        boolean jammed = mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT);
+        boolean hasRes = scanBlips != null && !scanBlips.isEmpty()
+                && scanStatus == RadarScanResultPacket.STATUS_SUCCESS;
 
-        // Priority: errors > results > cooldown > ready
-        if (scanStatus == RadarScanResultPacket.STATUS_NO_FUEL) {
-            // Fuel error — show for a few seconds then clear
-            scanButton.displayString = "No Fuel!";
-            scanButton.enabled = false;
-            statusMessage = TextFormatting.RED + "No fuel! Requires 1 Ender Pearl in inventory.";
-            statusColor = 0xFF4444;
-            errorDisplayTick++;
-            if (errorDisplayTick > 80) {
-                scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
-                errorDisplayTick = 0;
-            }
-        } else if (scanStatus == RadarScanResultPacket.STATUS_JAMMED
-                || mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) {
-            // Re-latch jammed status while the potion is active
-            if (mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) {
-                scanStatus = RadarScanResultPacket.STATUS_JAMMED;
-            }
-            scanButton.displayString = "Jammed!";
-            scanButton.enabled = false;
-            statusMessage = TextFormatting.DARK_RED + "JAMMED! Cannot operate scanner.";
+        ScanRange range = RadarNetworkHandler.getRange(selectedRange);
+
+        if (jammed) {
+            scanBtn.displayString = "Jammed!";
+            scanBtn.enabled = false;
+            statusMsg = TextFormatting.DARK_RED + "JAMMED — cannot scan";
             statusColor = 0xFF0000;
-            errorDisplayTick++;
-            if (errorDisplayTick > 80 && !mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) {
+        } else if (scanStatus == RadarScanResultPacket.STATUS_NO_FUEL) {
+            scanBtn.displayString = "No Fuel!";
+            scanBtn.enabled = false;
+            statusMsg = TextFormatting.RED + "Need " + range.fuelCount + "x fuel";
+            statusColor = 0xFF4444;
+            errorTicks++;
+            if (errorTicks > 100) {
                 scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
-                errorDisplayTick = 0;
+                errorTicks = 0;
             }
-        } else if (hasResults) {
-            // Results take priority over cooldown — show what we found!
-            long remaining = (cooldownEndMs - System.currentTimeMillis()) / 1000 + 1;
-            if (onCooldown) {
-                scanButton.displayString = "Cooldown: " + remaining + "s";
-                scanButton.enabled = false;
-            } else {
-                scanButton.displayString = "Scan Again";
-                scanButton.enabled = true;
-            }
-            statusMessage = TextFormatting.GREEN + "Scan active — " + scanBlips.size() + " signal(s) detected";
+        } else if (hasRes) {
+            scanBtn.displayString = onCd ? "Cooldown " + fmtBtn(cooldownEndMs) : "Scan Again";
+            scanBtn.enabled = !onCd;
+            statusMsg = TextFormatting.GREEN + "" + scanBlips.size()
+                    + " signal(s)  |  " + range.label;
             statusColor = 0x00FF00;
-        } else if (onCooldown) {
-            long remaining = (cooldownEndMs - System.currentTimeMillis()) / 1000 + 1;
-            scanButton.displayString = "Cooldown: " + remaining + "s";
-            scanButton.enabled = false;
-            statusMessage = TextFormatting.GRAY + "Scanner recharging...";
+        } else if (onCd) {
+            scanBtn.displayString = "Cooldown " + fmtBtn(cooldownEndMs);
+            scanBtn.enabled = false;
+            statusMsg = TextFormatting.GRAY + "Recharging...";
             statusColor = 0x888888;
         } else {
-            scanButton.displayString = "Scan";
-            scanButton.enabled = true;
-            statusMessage = TextFormatting.YELLOW + "Ready to scan";
+            scanBtn.displayString = "Scan";
+            scanBtn.enabled = true;
+            statusMsg = TextFormatting.YELLOW + "Ready";
             statusColor = 0xFFFF00;
         }
     }
 
+    // ---- draw ----
+
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
+        ScanRange range = RadarNetworkHandler.getRange(selectedRange);
 
         // Title
         drawCenteredString(fontRenderer,
-                TextFormatting.GOLD + "Lumiscope" + TextFormatting.RESET + " Radar Device",
-                width / 2, 8, 0xFFFFFF);
+                TextFormatting.GOLD + "Lumiscope Radar",
+                width / 2, 6, 0xFFFFFF);
 
-        // Stale data warning (above scope)
-        if (scanBlips != null && !scanBlips.isEmpty() && RadarNetworkHandler.areResultsStale()) {
-            drawCenteredString(fontRenderer,
-                    TextFormatting.GRAY + "" + TextFormatting.ITALIC + "Signal data stale — rescan recommended",
-                    width / 2, scopeCenterY - SCOPE_RADIUS - 18, 0x888888);
-        }
+        // Scope border
+        drawRect(scopeCX - scopeR - 2, scopeCY - scopeR - 2,
+                scopeCX + scopeR + 2, scopeCY + scopeR + 2, 0xFF333333);
 
-        // Scope area border
-        drawRect(scopeCenterX - SCOPE_RADIUS - 4, scopeCenterY - SCOPE_RADIUS - 4,
-                scopeCenterX + SCOPE_RADIUS + 4, scopeCenterY + SCOPE_RADIUS + 4, 0xFF222222);
-        drawRect(scopeCenterX - SCOPE_RADIUS - 2, scopeCenterY - SCOPE_RADIUS - 2,
-                scopeCenterX + SCOPE_RADIUS + 2, scopeCenterY + SCOPE_RADIUS + 2, 0xFF444444);
+        ScopeRenderer.renderScope(scopeCX, scopeCY, scopeR, scanBlips, animFrame);
 
-        // The scope
-        ScopeRenderer.renderScope(scopeCenterX, scopeCenterY, SCOPE_RADIUS, scanBlips, partialTicks);
+        // Compass
+        label(scopeCX, scopeCY - scopeR - 6, "N", 0x00DD00);
+        label(scopeCX + scopeR + 7, scopeCY, "E", 0x00DD00);
+        label(scopeCX, scopeCY + scopeR + 6, "S", 0x00DD00);
+        label(scopeCX - scopeR - 16, scopeCY, "W", 0x00DD00);
 
-        // Compass labels
-        drawCompassLabel(scopeCenterX, scopeCenterY - SCOPE_RADIUS - 8, "N");
-        drawCompassLabel(scopeCenterX + SCOPE_RADIUS + 8, scopeCenterY, "E");
-        drawCompassLabel(scopeCenterX, scopeCenterY + SCOPE_RADIUS + 8, "S");
-        drawCompassLabel(scopeCenterX - SCOPE_RADIUS - 18, scopeCenterY, "W");
+        // Range label + buttons on the left
+        drawString(fontRenderer,
+                TextFormatting.GOLD + range.label,
+                8, 30, 0xFFFFFF);
 
-        // Player count badges
-        if (scanBlips != null) {
-            for (RadarBlip blip : scanBlips) {
-                if (blip.playerCount > 1) {
-                    double angle = blip.direction;
-                    float distRatio;
-                    switch (blip.distanceTier) {
-                        case 0: distRatio = 0.95f; break;
-                        case 1: distRatio = 0.80f; break;
-                        case 2: distRatio = 0.60f; break;
-                        case 3: distRatio = 0.40f; break;
-                        case 4: distRatio = 0.25f; break;
-                        default: distRatio = 0.12f; break;
-                    }
-                    int bx = (int)(scopeCenterX + Math.cos(angle) * SCOPE_RADIUS * distRatio);
-                    int by = (int)(scopeCenterY + Math.sin(angle) * SCOPE_RADIUS * distRatio);
-                    drawCenteredString(fontRenderer,
-                            TextFormatting.WHITE + "x" + blip.playerCount,
-                            bx + 8, by - 4, 0xFFFFFF);
-                }
-            }
-        }
-
-        // Left: Fuel indicator
-        int fuelX = 20;
-        int fuelY = height / 2 - 30;
-        drawString(fontRenderer, TextFormatting.GOLD + "Fuel Required:", fuelX, fuelY - 14, 0xFFFFFF);
+        // Fuel icon + count (left side, below range buttons)
+        int fuelX = 8;
+        int fuelY = 64;
         RenderHelper.enableGUIStandardItemLighting();
-        RenderItem renderItem = Minecraft.getMinecraft().getRenderItem();
-        renderItem.renderItemAndEffectIntoGUI(new ItemStack(Items.ENDER_PEARL), fuelX + 5, fuelY);
+        itemRender.renderItemAndEffectIntoGUI(
+                new ItemStack(range.fuelItem), fuelX, fuelY);
         RenderHelper.disableStandardItemLighting();
-        drawString(fontRenderer, "Ender Pearl", fuelX + 25, fuelY + 6, 0xAAAAAA);
+        drawString(fontRenderer,
+                TextFormatting.WHITE + "x" + range.fuelCount,
+                fuelX + 20, fuelY + 4, 0xFFFFFF);
 
-        // Right: Distance legend
-        int legendX = width - 120;
-        int legendY = height / 2 - 60;
-        drawString(fontRenderer, TextFormatting.GOLD + "Distance Legend:", legendX, legendY, 0xFFFFFF);
-        String[] tierNames = {"Very Close", "Close", "Moderate", "Far", "Very Far", "Extremely Far"};
-        int[] tierColors = {0xFFFFB000, 0xFFFFD700, 0xFFADFF2F, 0xFF00CED1, 0xFF4169E1, 0xFF191970};
-        for (int i = 0; i < tierNames.length; i++) {
-            int y = legendY + 12 + i * 12;
-            drawRect(legendX, y, legendX + 8, y + 8, tierColors[i]);
-            drawString(fontRenderer, tierNames[i], legendX + 14, y, tierColors[i]);
+        // Cooldown duration (left side, below fuel)
+        drawString(fontRenderer,
+                TextFormatting.DARK_GRAY + "Cooldown: " + fmtDur(range.cooldownMs),
+                fuelX, fuelY + 20, 0x666666);
+
+        // Legend (top-right, compact)
+        int lx = width - 100;
+        int ly = 14;
+        String[] names = {"V.Close","Close","Mod.","Far","V.Far","Faint"};
+        int[] lc = {0xFFFFB000,0xFFFFD700,0xFFADFF2F,0xFF00CED1,0xFF4169E1,0xFF8888CC};
+        for (int i = 0; i < names.length; i++) {
+            int y = ly + i * 9;
+            drawRect(lx, y, lx + 6, y + 5, lc[i]);
+            drawString(fontRenderer, names[i], lx + 9, y - 1, lc[i]);
         }
 
-        // Cooldown bar — pushed well below scope
-        int barX = width / 2 - 55;
-        int barY = scopeCenterY + SCOPE_RADIUS + 28;
-        int barW = 110;
-        int barH = 6;
-        drawRect(barX, barY, barX + barW, barY + barH, 0xFF333333);
-        if (cooldownEndMs > System.currentTimeMillis()) {
-            long totalCd = RadarNetworkHandler.COOLDOWN_TICKS * 50L;
-            long remaining = cooldownEndMs - System.currentTimeMillis();
-            float progress = 1.0f - (float) remaining / totalCd;
-            int fillW = (int)(barW * progress);
-            drawGradientRect(barX, barY, barX + fillW, barY + barH, 0xFF4488FF, 0xFF2266DD);
-        } else {
-            drawGradientRect(barX, barY, barX + barW, barY + barH, 0xFF44FF44, 0xFF22DD22);
-        }
-
-        // Label above the bar
-        if (cooldownEndMs > System.currentTimeMillis()) {
-            long remainingSec = (cooldownEndMs - System.currentTimeMillis()) / 1000 + 1;
-            drawCenteredString(fontRenderer,
-                    TextFormatting.GRAY + "Cooldown: " + remainingSec + "s",
-                    width / 2, barY - 11, 0xAAAAAA);
-        } else {
-            drawCenteredString(fontRenderer,
-                    TextFormatting.GREEN + "Ready",
-                    width / 2, barY - 11, 0x55FF55);
-        }
-
-        // Status message
-        drawCenteredString(fontRenderer, statusMessage, width / 2, height - 18, statusColor);
+        // Status (bottom-left)
+        drawString(fontRenderer, statusMsg, 6, height - 13, statusColor);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
-    private void drawCompassLabel(int x, int y, String label) {
-        drawString(fontRenderer, TextFormatting.GREEN + label,
-                x - fontRenderer.getStringWidth(label) / 2, y - 4, 0x00FF00);
-    }
+    // ---- actions ----
 
     @Override
-    protected void actionPerformed(GuiButton button) throws IOException {
-        if (button.id != BUTTON_SCAN) return;
-
-        // Guard: don't allow scan during cooldown, jammed, or no-fuel states
-        if (System.currentTimeMillis() < cooldownEndMs) return;
-        if (mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) return;
-        if (scanStatus == RadarScanResultPacket.STATUS_JAMMED) return;
-        if (scanStatus == RadarScanResultPacket.STATUS_NO_FUEL) return;
-        if (!button.enabled) return;
-
-        // Clear previous results immediately so stale data doesn't linger
-        scanBlips = null;
-        scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
-
-        // Send scan request to server (server is authoritative on cooldown/fuel/jammed)
-        RadarNetworkHandler.getNetworkChannel().sendToServer(new RadarScanRequestPacket());
-
-        // Set local cooldown immediately for responsive UI
-        cooldownEndMs = System.currentTimeMillis() + RadarNetworkHandler.COOLDOWN_TICKS * 50L;
-        button.enabled = false;
-    }
-
-    @Override
-    protected void keyTyped(char typedChar, int keyCode) throws IOException {
-        if (keyCode == 1 || keyCode == mc.gameSettings.keyBindInventory.getKeyCode()) {
-            mc.displayGuiScreen(null);
-            if (mc.currentScreen == null) {
-                mc.setIngameFocus();
-            }
-        } else {
-            super.keyTyped(typedChar, keyCode);
+    protected void actionPerformed(GuiButton btn) throws IOException {
+        switch (btn.id) {
+            case BTN_SCAN:
+                if (System.currentTimeMillis() < cooldownEndMs) return;
+                if (mc.player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) return;
+                if (!btn.enabled) return;
+                scanBlips = null;
+                scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
+                RadarNetworkHandler.getNetworkChannel()
+                        .sendToServer(new RadarScanRequestPacket(selectedRange));
+                break;
+            case BTN_PREV:
+                selectedRange = (byte)((selectedRange - 1
+                        + RadarNetworkHandler.getRangeCount())
+                        % RadarNetworkHandler.getRangeCount());
+                break;
+            case BTN_NEXT:
+                selectedRange = (byte)((selectedRange + 1)
+                        % RadarNetworkHandler.getRangeCount());
+                break;
         }
     }
 
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
+    // ---- helpers ----
+
+    private void label(int x, int y, String s, int c) {
+        drawString(fontRenderer, s, x - fontRenderer.getStringWidth(s) / 2, y - 4, c);
     }
+
+    private static String fmtFull(long endMs) {
+        long r = Math.max(0, (endMs - System.currentTimeMillis()) / 1000);
+        if (r >= 3600) return (r/3600) + "h " + ((r%3600)/60) + "m remaining";
+        if (r >= 60) return (r/60) + "m " + (r%60) + "s remaining";
+        return r + "s remaining";
+    }
+
+    private static String fmtBtn(long endMs) {
+        long r = Math.max(0, (endMs - System.currentTimeMillis()) / 1000);
+        if (r >= 3600) return (r/3600) + "h" + ((r%3600)/60) + "m";
+        if (r >= 60) return (r/60) + "m";
+        return r + "s";
+    }
+
+    private static String fmtDur(long ms) {
+        long s = ms / 1000;
+        if (s >= 3600) return (s/3600) + "h";
+        if (s >= 60) return (s/60) + "m";
+        return s + "s";
+    }
+
+    @Override
+    protected void keyTyped(char c, int code) throws IOException {
+        if (code == 1 || code == mc.gameSettings.keyBindInventory.getKeyCode()) {
+            mc.displayGuiScreen(null);
+            if (mc.currentScreen == null) mc.setIngameFocus();
+        } else super.keyTyped(c, code);
+    }
+
+    @Override
+    public boolean doesGuiPauseGame() { return false; }
 }
