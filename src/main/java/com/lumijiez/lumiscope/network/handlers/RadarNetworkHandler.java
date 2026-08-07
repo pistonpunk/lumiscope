@@ -6,6 +6,7 @@ import com.lumijiez.lumiscope.network.packets.RadarScanResultPacket;
 import com.lumijiez.lumiscope.network.records.RadarBlip;
 import com.lumijiez.lumiscope.potions.PotionManager;
 import com.lumijiez.lumiscope.util.PerlinNoise;
+import com.lumijiez.lumiscope.world.RadarCooldownData;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
@@ -24,17 +25,15 @@ public class RadarNetworkHandler {
     private static final SimpleNetworkWrapper NETWORK =
             NetworkRegistry.INSTANCE.newSimpleChannel("lumiscope_radar");
 
-    private static final Map<UUID, Long> cooldownMap = new HashMap<>();
-
     // ---- Scan Range Tiers ----
 
     public enum ScanRange {
-        LOCAL      (0, "Local",       10_000,      5 * 60 * 1000L,      Items.DIAMOND,      1,  25.0),
-        REGIONAL   (1, "Regional",    50_000,      15 * 60 * 1000L,     Items.ENDER_PEARL,  8,  28.0),
-        CONTINENTAL(2, "Continental", 250_000,     45 * 60 * 1000L,     Items.ENDER_EYE,    32, 31.0),
-        HEMISPHERIC(3, "Hemispheric", 1_000_000,   2 * 3600 * 1000L,    Items.GHAST_TEAR,   16, 34.0),
-        GLOBAL     (4, "Global",      5_000_000,   4 * 3600 * 1000L,    Items.NETHER_STAR,  1,  37.0),
-        ABSOLUTE   (5, "Absolute",    30_000_000,  6 * 3600 * 1000L,    Items.NETHER_STAR,  2,  40.0);
+        LOCAL      (0, "Local",       5_000,       2 * 3600 * 1000L,        Items.DIAMOND,      16, 25.0),
+        REGIONAL   (1, "Regional",    50_000,      2 * 3600 * 1000L,         Items.ENDER_PEARL,  16, 28.0),
+        CONTINENTAL(2, "Continental", 250_000,     12 * 3600 * 1000L,        Items.ENDER_EYE,    64, 31.0),
+        HEMISPHERIC(3, "Hemispheric", 1_000_000,   2 * 24 * 3600 * 1000L,    Items.GHAST_TEAR,   32, 34.0),
+        GLOBAL     (4, "Global",      5_000_000,   7 * 24 * 3600 * 1000L,    Items.NETHER_STAR,  16, 37.0),
+        ABSOLUTE   (5, "Absolute",    30_000_000,  14 * 24 * 3600 * 1000L,   Items.NETHER_STAR,  32, 40.0);
 
         public final byte ordinal;
         public final String label;
@@ -115,12 +114,15 @@ public class RadarNetworkHandler {
         // Cooldown check
         long now = System.currentTimeMillis();
         UUID pid = player.getUniqueID();
-        Long last = cooldownMap.get(pid);
-        if (last != null && (now - last) < range.cooldownMs) {
-            return new RadarScanResultPacket(
-                    Collections.emptyList(),
-                    RadarScanResultPacket.STATUS_COOLDOWN,
-                    now, rangeOrdinal);
+        RadarCooldownData cdData = RadarCooldownData.get(player.world);
+        if (cdData != null) {
+            long cdEnd = cdData.getCooldownEnd(pid);
+            if (cdEnd > now) {
+                return new RadarScanResultPacket(
+                        Collections.emptyList(),
+                        RadarScanResultPacket.STATUS_COOLDOWN,
+                        now, rangeOrdinal);
+            }
         }
 
         // Fuel check
@@ -134,8 +136,10 @@ public class RadarNetworkHandler {
         // Damage radar
         damageRadarDevice(player);
 
-        // Record cooldown
-        cooldownMap.put(pid, now);
+        // Record cooldown — persists across restarts/rejoins
+        if (cdData != null) {
+            cdData.setCooldown(pid, now + range.cooldownMs);
+        }
 
         // Scan
         List<RadarBlip> blips = scanForPlayers(player, range);
@@ -290,15 +294,6 @@ public class RadarNetworkHandler {
         ItemStack oh = player.getHeldItemOffhand();
         if (mh.getItem() instanceof RadarDevice) mh.damageItem(1, player);
         else if (oh.getItem() instanceof RadarDevice) oh.damageItem(1, player);
-    }
-
-    // ---- Cooldown utility ----
-
-    public static long getCooldownRemainingMs(UUID pid) {
-        Long last = cooldownMap.get(pid);
-        if (last == null) return 0;
-        // Use the shortest cooldown as a conservative estimate for display
-        return Math.max(0, last + ScanRange.LOCAL.cooldownMs - System.currentTimeMillis());
     }
 
     public static ScanRange getRange(byte ord) { return ScanRange.fromOrdinal(ord); }
