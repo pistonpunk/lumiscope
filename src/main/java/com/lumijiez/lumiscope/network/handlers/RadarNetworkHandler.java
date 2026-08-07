@@ -29,12 +29,12 @@ public class RadarNetworkHandler {
     // ---- Scan Range Tiers ----
 
     public enum ScanRange {
-        LOCAL      (0, "Local",       10_000,      5 * 60 * 1000L,      Items.DIAMOND,      1,  50.0),
-        REGIONAL   (1, "Regional",    50_000,      15 * 60 * 1000L,     Items.ENDER_PEARL,  8,  55.0),
-        CONTINENTAL(2, "Continental", 250_000,     45 * 60 * 1000L,     Items.ENDER_EYE,    32, 60.0),
-        HEMISPHERIC(3, "Hemispheric", 1_000_000,   2 * 3600 * 1000L,    Items.GHAST_TEAR,   16, 65.0),
-        GLOBAL     (4, "Global",      5_000_000,   4 * 3600 * 1000L,    Items.NETHER_STAR,  1,  70.0),
-        ABSOLUTE   (5, "Absolute",    30_000_000,  6 * 3600 * 1000L,    Items.NETHER_STAR,  2,  75.0);
+        LOCAL      (0, "Local",       10_000,      5 * 60 * 1000L,      Items.DIAMOND,      1,  25.0),
+        REGIONAL   (1, "Regional",    50_000,      15 * 60 * 1000L,     Items.ENDER_PEARL,  8,  28.0),
+        CONTINENTAL(2, "Continental", 250_000,     45 * 60 * 1000L,     Items.ENDER_EYE,    32, 31.0),
+        HEMISPHERIC(3, "Hemispheric", 1_000_000,   2 * 3600 * 1000L,    Items.GHAST_TEAR,   16, 34.0),
+        GLOBAL     (4, "Global",      5_000_000,   4 * 3600 * 1000L,    Items.NETHER_STAR,  1,  37.0),
+        ABSOLUTE   (5, "Absolute",    30_000_000,  6 * 3600 * 1000L,    Items.NETHER_STAR,  2,  40.0);
 
         public final byte ordinal;
         public final String label;
