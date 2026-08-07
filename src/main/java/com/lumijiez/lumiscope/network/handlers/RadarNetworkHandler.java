@@ -190,11 +190,18 @@ public class RadarNetworkHandler {
         double t = System.currentTimeMillis() / 1000.0;
         double h = Math.abs((scanner.getUniqueID().hashCode() * 31L
                 + target.getUniqueID().hashCode()) % 10000) / 10000.0;
-        double n1 = PerlinNoise.noise(t + h * 100.0);
-        double n2 = PerlinNoise.noise(t + h * 100.0 + 50.0);
-        double err = maxError * 0.7 + Math.abs(n2) * maxError * 0.3;
-        double sign = n1 > 0 ? 1 : -1;
-        return base + sign * err;
+
+        // floating split point — asymmetric error window each scan
+        double split = (PerlinNoise.noise(t * 0.3 + h * 77.0) + 1.0) / 2.0; // 0..1
+        double totalWindow = maxError * 2.0;
+        double leftMax  = split * totalWindow;
+        double rightMax = (1.0 - split) * totalWindow;
+
+        // where in the window does the actual error land
+        double pos = (PerlinNoise.noise(t * 0.7 + h * 131.0) + 1.0) / 2.0; // 0..1
+        double err = -leftMax + pos * totalWindow;
+
+        return base + err;
     }
 
     // ---- Distance Tiers ----
