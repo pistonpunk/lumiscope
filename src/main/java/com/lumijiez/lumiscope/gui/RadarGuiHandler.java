@@ -11,7 +11,6 @@ public class RadarGuiHandler implements IGuiHandler {
     @Nullable
     @Override
     public Object getServerGuiElement(int ID, EntityPlayer player, World world, int x, int y, int z) {
-        // No server-side container needed — this is a simple GUI screen
         return null;
     }
 
