@@ -35,10 +35,6 @@ public class RadarGuiScreen extends GuiScreen {
 
     private int scopeCX, scopeCY, scopeR;
 
-    // ================================================================
-    //  STATIC
-    // ================================================================
-
     public static void onScanResult(List<RadarBlip> blips, byte status,
                                      long serverTimestamp, byte rangeOrdinal) {
         scanBlips = blips;
@@ -49,10 +45,6 @@ public class RadarGuiScreen extends GuiScreen {
             selectedRange = rangeOrdinal;
         }
     }
-
-    // ================================================================
-    //  INIT
-    // ================================================================
 
     @Override
     public void initGui() {
@@ -90,20 +82,12 @@ public class RadarGuiScreen extends GuiScreen {
         else           scanBtn.displayString = "Scan";
     }
 
-    // ================================================================
-    //  TICK
-    // ================================================================
-
     @Override
     public void updateScreen() {
         super.updateScreen();
         animFrame++;
         updateButtonStates();
     }
-
-    // ================================================================
-    //  DRAW
-    // ================================================================
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -126,8 +110,6 @@ public class RadarGuiScreen extends GuiScreen {
 
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
-
-    // ---- scope ----
 
     private void drawScope() {
         drawCircle(scopeCX, scopeCY, scopeR, 0xFF444444);
@@ -162,8 +144,6 @@ public class RadarGuiScreen extends GuiScreen {
         GlStateManager.popMatrix();
     }
 
-    // ---- fuel ----
-
     private void drawFuel(ScanRange range) {
         int barY = guiTop + H - 34 + 6;
         int x = guiLeft + 8;
@@ -179,8 +159,6 @@ public class RadarGuiScreen extends GuiScreen {
 
         drawString(fontRenderer, "×" + range.fuelCount, x + 22, y + 5, 0xFFFFFF);
     }
-
-    // ---- message (BELOW container) ----
 
     private void drawMessage(ScanRange range) {
         int my = guiTop + H + 8;
@@ -209,8 +187,6 @@ public class RadarGuiScreen extends GuiScreen {
         drawCenteredString(fontRenderer, msg, cx, my, color);
     }
 
-    // ---- container ----
-
     private void drawContainer() {
         drawRect(guiLeft, guiTop, guiLeft + W, guiTop + H, 0xFFC6C6C6);
         drawRect(guiLeft + 3, guiTop + 3, guiLeft + W - 3, guiTop + H - 3, 0xFF000000);
@@ -226,10 +202,6 @@ public class RadarGuiScreen extends GuiScreen {
                      (int)(cx + Math.cos(rad) * r) + 1, (int)(cy + Math.sin(rad) * r) + 1, color);
         }
     }
-
-    // ================================================================
-    //  ACTIONS
-    // ================================================================
 
     @Override
     protected void actionPerformed(GuiButton btn) throws IOException {
@@ -254,10 +226,6 @@ public class RadarGuiScreen extends GuiScreen {
         }
     }
 
-    // ================================================================
-    //  KEYBOARD
-    // ================================================================
-
     @Override
     protected void keyTyped(char c, int code) throws IOException {
         if (code == 1 || code == mc.gameSettings.keyBindInventory.getKeyCode()) {
@@ -268,10 +236,6 @@ public class RadarGuiScreen extends GuiScreen {
 
     @Override
     public boolean doesGuiPauseGame() { return false; }
-
-    // ================================================================
-    //  HELPERS
-    // ================================================================
 
     private static String fmtCooldown(long endMs) {
         long r = Math.max(0, (endMs - System.currentTimeMillis()) / 1000);
