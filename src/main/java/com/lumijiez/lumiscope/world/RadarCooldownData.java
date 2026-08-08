@@ -38,7 +38,6 @@ public class RadarCooldownData extends WorldSavedData {
     public long getCooldownEnd(UUID playerId) {
         Long end = cooldowns.get(playerId);
         if (end == null) return 0;
-        // if expired, clean up
         if (end < System.currentTimeMillis()) {
             cooldowns.remove(playerId);
             markDirty();
@@ -61,7 +60,6 @@ public class RadarCooldownData extends WorldSavedData {
             NBTTagCompound entry = list.getCompoundTagAt(i);
             UUID id = UUID.fromString(entry.getString("uuid"));
             long end = entry.getLong("end");
-            // skip expired entries on load
             if (end > now) {
                 cooldowns.put(id, end);
             }

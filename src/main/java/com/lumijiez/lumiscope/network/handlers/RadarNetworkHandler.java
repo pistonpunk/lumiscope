@@ -25,8 +25,6 @@ public class RadarNetworkHandler {
     private static final SimpleNetworkWrapper NETWORK =
             NetworkRegistry.INSTANCE.newSimpleChannel("lumiscope_radar");
 
-    // ---- Scan Range Tiers ----
-
     public enum ScanRange {
         LOCAL      (0, "Local",       5_000,       2 * 3600 * 1000L,        Items.DIAMOND,      16, 25.0),
         REGIONAL   (1, "Regional",    50_000,      2 * 3600 * 1000L,         Items.ENDER_PEARL,  16, 28.0),
@@ -64,8 +62,6 @@ public class RadarNetworkHandler {
         public static int count() { return values().length; }
     }
 
-    // ---- Distance Display Tiers ----
-
     public enum DistanceTier {
         VERY_CLOSE  (0, 0, 500,           "Very Close"),
         CLOSE       (1, 500, 2_000,        "Close"),
@@ -87,8 +83,6 @@ public class RadarNetworkHandler {
         }
     }
 
-    // ---- Registration ----
-
     public static void registerMessages() {
         NETWORK.registerMessage(RadarScanRequestPacket.Handler.class,
                 RadarScanRequestPacket.class, 0, Side.SERVER);
@@ -98,12 +92,9 @@ public class RadarNetworkHandler {
 
     public static SimpleNetworkWrapper getNetworkChannel() { return NETWORK; }
 
-    // ---- Scan (server-side) ----
-
     public static IMessage handleScanRequest(EntityPlayerMP player, byte rangeOrdinal) {
         ScanRange range = ScanRange.fromOrdinal(rangeOrdinal);
 
-        // Jammed check
         if (player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) {
             return new RadarScanResultPacket(
                     Collections.emptyList(),
@@ -111,7 +102,6 @@ public class RadarNetworkHandler {
                     System.currentTimeMillis(), rangeOrdinal);
         }
 
-        // Cooldown check
         long now = System.currentTimeMillis();
         UUID pid = player.getUniqueID();
         RadarCooldownData cdData = RadarCooldownData.get(player.world);
@@ -125,7 +115,6 @@ public class RadarNetworkHandler {
             }
         }
 
-        // Fuel check
         if (!consumeFuel(player, range.fuelItem, range.fuelCount)) {
             return new RadarScanResultPacket(
                     Collections.emptyList(),
@@ -133,22 +122,17 @@ public class RadarNetworkHandler {
                     now, rangeOrdinal);
         }
 
-        // Damage radar
         damageRadarDevice(player);
 
-        // Record cooldown — persists across restarts/rejoins
         if (cdData != null) {
             cdData.setCooldown(pid, now + range.cooldownMs);
         }
 
-        // Scan
         List<RadarBlip> blips = scanForPlayers(player, range);
 
         return new RadarScanResultPacket(blips, RadarScanResultPacket.STATUS_SUCCESS,
                 now, rangeOrdinal);
     }
-
-    // ---- Scanning ----
 
     private static List<RadarBlip> scanForPlayers(EntityPlayerMP scanner, ScanRange range) {
         List<RadarBlip> raw = new ArrayList<>();
@@ -175,8 +159,6 @@ public class RadarNetworkHandler {
         return true;
     }
 
-    // ---- Angles ----
-
     private static double calculateRawAngle(EntityPlayerMP from, EntityPlayerMP to) {
         double dx = to.posX - from.posX;
         double dz = to.posZ - from.posZ;
@@ -195,20 +177,16 @@ public class RadarNetworkHandler {
         double h = Math.abs((scanner.getUniqueID().hashCode() * 31L
                 + target.getUniqueID().hashCode()) % 10000) / 10000.0;
 
-        // floating split point — asymmetric error window each scan
-        double split = (PerlinNoise.noise(t * 0.3 + h * 77.0) + 1.0) / 2.0; // 0..1
+        double split = (PerlinNoise.noise(t * 0.3 + h * 77.0) + 1.0) / 2.0;
         double totalWindow = maxError * 2.0;
         double leftMax  = split * totalWindow;
         double rightMax = (1.0 - split) * totalWindow;
 
-        // where in the window does the actual error land
-        double pos = (PerlinNoise.noise(t * 0.7 + h * 131.0) + 1.0) / 2.0; // 0..1
+        double pos = (PerlinNoise.noise(t * 0.7 + h * 131.0) + 1.0) / 2.0;
         double err = -leftMax + pos * totalWindow;
 
         return base + err;
     }
-
-    // ---- Distance Tiers ----
 
     private static byte getTier(double dist) {
         for (DistanceTier t : DistanceTier.values()) {
@@ -223,8 +201,6 @@ public class RadarNetworkHandler {
         }
         return "???";
     }
-
-    // ---- Blip Merging ----
 
     private static final double MERGE_ANGLE = Math.toRadians(25.0);
 
@@ -262,10 +238,7 @@ public class RadarNetworkHandler {
         return r;
     }
 
-    // ---- Fuel ----
-
     private static boolean consumeFuel(EntityPlayerMP player, Item fuelItem, int count) {
-        // First, verify the player has enough
         NonNullList<ItemStack> inv = player.inventory.mainInventory;
         int found = 0;
         for (ItemStack s : inv) {
@@ -273,7 +246,6 @@ public class RadarNetworkHandler {
         }
         if (found < count) return false;
 
-        // Consume
         int remaining = count;
         for (int i = 0; i < inv.size() && remaining > 0; i++) {
             ItemStack s = inv.get(i);
@@ -286,8 +258,6 @@ public class RadarNetworkHandler {
         }
         return true;
     }
-
-    // ---- Durability ----
 
     private static void damageRadarDevice(EntityPlayerMP player) {
         ItemStack mh = player.getHeldItemMainhand();
