@@ -51,6 +51,11 @@ public class RadarCooldownData extends WorldSavedData {
         markDirty();
     }
 
+    public void clearAll() {
+        cooldowns.clear();
+        markDirty();
+    }
+
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         cooldowns.clear();

@@ -28,6 +28,7 @@ public class RadarGuiScreen extends GuiScreen {
     private static byte scanStatus = RadarScanResultPacket.STATUS_SUCCESS;
     private static long cooldownEndMs;
     private static byte selectedRange;
+    private static boolean queryPending;
 
     private int guiLeft, guiTop;
     private GuiButton scanBtn, prevBtn, nextBtn;
@@ -37,12 +38,22 @@ public class RadarGuiScreen extends GuiScreen {
 
     public static void onScanResult(List<RadarBlip> blips, byte status,
                                      long serverTimestamp, byte rangeOrdinal) {
-        scanBlips = blips;
         scanStatus = status;
         if (status == RadarScanResultPacket.STATUS_SUCCESS) {
+            if (queryPending) {
+                queryPending = false;
+                scanBlips = null;
+                cooldownEndMs = 0;
+                return;
+            }
+            scanBlips = blips;
             ScanRange r = RadarNetworkHandler.getRange(rangeOrdinal);
             cooldownEndMs = serverTimestamp + r.cooldownMs;
             selectedRange = rangeOrdinal;
+        } else if (status == RadarScanResultPacket.STATUS_COOLDOWN) {
+            queryPending = false;
+            scanBlips = null;
+            cooldownEndMs = serverTimestamp;
         }
     }
 
@@ -67,6 +78,10 @@ public class RadarGuiScreen extends GuiScreen {
         scanBtn = new GuiButton(BTN_SCAN, guiLeft + W / 2 - 32, barY, 64, 18, "Scan");
         addButton(scanBtn);
 
+        queryPending = true;
+        cooldownEndMs = 0;
+        RadarNetworkHandler.getNetworkChannel()
+                .sendToServer(new RadarScanRequestPacket(selectedRange, true));
         updateButtonStates();
     }
 

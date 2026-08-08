@@ -92,7 +92,7 @@ public class RadarNetworkHandler {
 
     public static SimpleNetworkWrapper getNetworkChannel() { return NETWORK; }
 
-    public static IMessage handleScanRequest(EntityPlayerMP player, byte rangeOrdinal) {
+    public static IMessage handleScanRequest(EntityPlayerMP player, byte rangeOrdinal, boolean query) {
         ScanRange range = ScanRange.fromOrdinal(rangeOrdinal);
 
         if (player.isPotionActive(PotionManager.JAMMED_POTION_EFFECT)) {
@@ -111,8 +111,15 @@ public class RadarNetworkHandler {
                 return new RadarScanResultPacket(
                         Collections.emptyList(),
                         RadarScanResultPacket.STATUS_COOLDOWN,
-                        now, rangeOrdinal);
+                        cdEnd, rangeOrdinal);
             }
+        }
+
+        if (query) {
+            return new RadarScanResultPacket(
+                    Collections.emptyList(),
+                    RadarScanResultPacket.STATUS_SUCCESS,
+                    now, rangeOrdinal);
         }
 
         if (!consumeFuel(player, range.fuelItem, range.fuelCount)) {

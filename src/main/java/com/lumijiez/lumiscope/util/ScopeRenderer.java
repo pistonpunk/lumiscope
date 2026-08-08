@@ -21,6 +21,10 @@ public class ScopeRenderer {
         GlStateManager.disableTexture2D();
         GlStateManager.enableBlend();
         GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glEnable(GL11.GL_LINE_SMOOTH);
+        GL11.glEnable(GL11.GL_POLYGON_SMOOTH);
+        GL11.glHint(GL11.GL_LINE_SMOOTH_HINT, GL11.GL_NICEST);
+        GL11.glHint(GL11.GL_POLYGON_SMOOTH_HINT, GL11.GL_NICEST);
         GlStateManager.color(1, 1, 1, 1);
 
         fillCircle(cx, cy, radius, 8, 20, 8, 220);
@@ -74,6 +78,8 @@ public class ScopeRenderer {
             }
         }
 
+        GL11.glDisable(GL11.GL_LINE_SMOOTH);
+        GL11.glDisable(GL11.GL_POLYGON_SMOOTH);
         GlStateManager.color(1, 1, 1, 1);
         GlStateManager.enableTexture2D();
         GlStateManager.disableBlend();

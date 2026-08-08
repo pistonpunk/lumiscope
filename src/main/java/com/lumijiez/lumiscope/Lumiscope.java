@@ -1,5 +1,6 @@
 package com.lumijiez.lumiscope;
 
+import com.lumijiez.lumiscope.commands.ClearRadarCooldownsCommand;
 import com.lumijiez.lumiscope.events.LumiEventHandler;
 import com.lumijiez.lumiscope.gui.RadarGuiHandler;
 import com.lumijiez.lumiscope.handlers.RegistryHandler;
@@ -13,6 +14,7 @@ import net.minecraftforge.fml.common.SidedProxy;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 
 import static com.lumijiez.lumiscope.util.Ref.logger;
@@ -43,5 +45,10 @@ public class Lumiscope {
     public void postInit(FMLPostInitializationEvent event)
     {
         logger.info("Lumiscope initialized — ready to hunt.");
+    }
+
+    @EventHandler
+    public void serverStarting(FMLServerStartingEvent event) {
+        event.registerServerCommand(new ClearRadarCooldownsCommand());
     }
 }
